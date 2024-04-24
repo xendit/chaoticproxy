@@ -1,4 +1,4 @@
-package utils
+package main
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	copy(cp, p)
 
 	item := scheduledItem{
-		time: time.Now().Add(RandomDuration(dw.meanDelay, dw.stddevDelay)),
+		time: time.Now().Add(GenRandomDuration(dw.meanDelay, dw.stddevDelay)),
 		data: cp,
 	}
 

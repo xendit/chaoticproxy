@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/xendit/chaoticproxy/utils"
 )
 
 type ChaoticListener struct {
@@ -72,7 +70,7 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 			go func() {
 				cfg := l.GetConfig()
 				defer accepted.Close()
-				if utils.Likelyhood(cfg.RejectionRate) {
+				if Likelyhood(cfg.RejectionRate) {
 					events <- NewConnectionErrorEvent{Error: fmt.Errorf("Connection chaotically rejected")}
 					return
 				}
@@ -95,7 +93,7 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 
 				if cfg.Durability.Mean != 0 && cfg.Durability.StdDev != 0 {
 					go func() {
-						time.Sleep(utils.RandomDuration(duration(cfg.Durability.Mean), duration(cfg.Durability.StdDev)))
+						time.Sleep(GenRandomDuration(duration(cfg.Durability.Mean), duration(cfg.Durability.StdDev)))
 						conn, hasConn := l.GetConnections()[idAsString]
 						if hasConn {
 							_ = conn.Close()

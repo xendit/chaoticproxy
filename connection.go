@@ -7,8 +7,6 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
-
-	"github.com/xendit/chaoticproxy/utils"
 )
 
 type Connection struct {
@@ -18,8 +16,8 @@ type Connection struct {
 	acceptedLocalAddress  net.Addr
 	forwardedLocalAddress net.Addr
 	forwardedToAddress    net.Addr
-	deferredToForwarded   *utils.DeferredWriter
-	deferredToAccepted    *utils.DeferredWriter
+	deferredToForwarded   *DeferredWriter
+	deferredToAccepted    *DeferredWriter
 	closing               atomic.Bool
 	closingChan           chan struct{}
 }
@@ -32,8 +30,8 @@ func NewConnection(accepted net.Conn, forwardTo net.Conn, meanDelay time.Duratio
 		acceptedLocalAddress:  accepted.LocalAddr(),
 		forwardedLocalAddress: forwardTo.LocalAddr(),
 		forwardedToAddress:    forwardTo.RemoteAddr(),
-		deferredToForwarded:   utils.NewDeferredWriter(forwardTo, meanDelay, stddevDelay),
-		deferredToAccepted:    utils.NewDeferredWriter(accepted, meanDelay, stddevDelay),
+		deferredToForwarded:   NewDeferredWriter(forwardTo, meanDelay, stddevDelay),
+		deferredToAccepted:    NewDeferredWriter(accepted, meanDelay, stddevDelay),
 		closingChan:           make(chan struct{}),
 	}
 
