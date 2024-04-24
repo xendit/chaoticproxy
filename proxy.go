@@ -47,6 +47,13 @@ type NamedListenerConnectionClosedEvent struct {
 	Listener       *ChaoticListener
 	ConnectionName string
 	Connection     *Connection
+}
+
+type NamedListenerConnectionFailedEvent struct {
+	Name           string
+	Listener       *ChaoticListener
+	ConnectionName string
+	Connection     *Connection
 	Error          error
 }
 
@@ -110,7 +117,9 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 						case NewConnectionEvent:
 							p.events <- NamedListenerNewConnectionEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
 						case ConnectionClosedEvent:
-							p.events <- NamedListenerConnectionClosedEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection, Error: e.Error}
+							p.events <- NamedListenerConnectionClosedEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
+						case ConnectionFailedEvent:
+							p.events <- NamedListenerConnectionFailedEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection, Error: e.Error}
 						case NewConnectionErrorEvent:
 							p.events <- NamedListenerNewConnectionErrorEvent{Name: listenerConfig.Name, Listener: listener, Error: e.Error}
 						case ListenerStoppedEvent:

@@ -29,6 +29,11 @@ type NewConnectionEvent struct {
 type ConnectionClosedEvent struct {
 	Name       string
 	Connection *Connection
+}
+
+type ConnectionFailedEvent struct {
+	Name       string
+	Connection *Connection
 	Error      error
 }
 
@@ -81,8 +86,7 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 					return
 				}
 
-				connectionErrorChan := make(chan error)
-				connection := NewConnection(accepted, targetCon, duration(cfg.Latency.Mean), duration(cfg.Latency.StdDev), connectionErrorChan)
+				connection := NewConnection(accepted, targetCon, duration(cfg.Latency.Mean), duration(cfg.Latency.StdDev))
 
 				l.lock.Lock()
 				idAsString := strconv.Itoa(id)
@@ -96,18 +100,20 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 						time.Sleep(GenRandomDuration(duration(cfg.Durability.Mean), duration(cfg.Durability.StdDev)))
 						conn, hasConn := l.GetConnections()[idAsString]
 						if hasConn {
-							_ = conn.Close()
-							connectionErrorChan <- fmt.Errorf("Connection chaotically closed")
+							conn.Abort(fmt.Errorf("Connection chaotically closed"))
 						}
 					}()
 
 				}
-				connectionError := <-connectionErrorChan
-				_ = connection.Close()
+				connectionError := connection.Forward()
 
 				l.lock.Lock()
 				delete(l.connections, idAsString)
-				events <- ConnectionClosedEvent{Name: idAsString, Connection: connection, Error: connectionError}
+				if connectionError != nil {
+					events <- ConnectionFailedEvent{Name: idAsString, Connection: connection, Error: connectionError}
+				} else {
+					events <- ConnectionClosedEvent{Name: idAsString, Connection: connection}
+				}
 				l.lock.Unlock()
 			}()
 
@@ -147,9 +153,8 @@ func (l *ChaoticListener) Addr() net.Addr {
 func (l *ChaoticListener) Close() error {
 	l.lock.Lock()
 	l.stopping = true
-	for name, connection := range l.connections {
-		_ = connection.Close()
-		l.events <- ConnectionClosedEvent{Name: name, Connection: connection, Error: fmt.Errorf("listener closed")}
+	for _, connection := range l.connections {
+		connection.Abort(fmt.Errorf("listener closed"))
 	}
 	l.connections = make(map[string]*Connection)
 	l.lock.Unlock()

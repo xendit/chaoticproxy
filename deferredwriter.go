@@ -22,7 +22,6 @@ type DeferredWriter struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	mutex       sync.Mutex
-	closingChan chan struct{}
 }
 
 func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay time.Duration) *DeferredWriter {
@@ -34,13 +33,9 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 		ctx:         ctx,
 		cancel:      cancel,
 		pipeline:    make(chan scheduledItem, 100),
-		closingChan: make(chan struct{}),
 	}
 
 	go func() {
-		defer func() {
-			dw.closingChan <- struct{}{}
-		}()
 		for {
 			select {
 			case nextItem := <-dw.pipeline:
@@ -88,19 +83,11 @@ func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	return len(cp), nil
 }
 
-func (dw *DeferredWriter) Close() error {
+func (dw *DeferredWriter) Abort(err error) {
 	dw.mutex.Lock()
 	defer dw.mutex.Unlock()
 
-	dw.writeError = io.EOF
+	dw.writeError = err
 	dw.writeLen = 0
 	dw.cancel()
-
-	<-dw.closingChan
-
-	if closer, ok := dw.writer.(io.Closer); ok {
-		return closer.Close()
-	}
-
-	return nil
 }

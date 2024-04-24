@@ -1,102 +1,49 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"net"
-	"sync/atomic"
 	"time"
 )
 
 type Connection struct {
-	accepted              net.Conn
-	forwardTo             net.Conn
-	acceptedSourceAddress net.Addr
-	acceptedLocalAddress  net.Addr
-	forwardedLocalAddress net.Addr
-	forwardedToAddress    net.Addr
-	deferredToForwarded   *DeferredWriter
-	deferredToAccepted    *DeferredWriter
-	closing               atomic.Bool
-	closingChan           chan struct{}
+	accepted            net.Conn
+	forwardTo           net.Conn
+	deferredToForwarded *DeferredWriter
+	deferredToAccepted  *DeferredWriter
 }
 
-func NewConnection(accepted net.Conn, forwardTo net.Conn, meanDelay time.Duration, stddevDelay time.Duration, errorChan chan error) *Connection {
-	connection := &Connection{
-		accepted:              accepted,
-		forwardTo:             forwardTo,
-		acceptedSourceAddress: accepted.RemoteAddr(),
-		acceptedLocalAddress:  accepted.LocalAddr(),
-		forwardedLocalAddress: forwardTo.LocalAddr(),
-		forwardedToAddress:    forwardTo.RemoteAddr(),
-		deferredToForwarded:   NewDeferredWriter(forwardTo, meanDelay, stddevDelay),
-		deferredToAccepted:    NewDeferredWriter(accepted, meanDelay, stddevDelay),
-		closingChan:           make(chan struct{}),
+func NewConnection(accepted net.Conn, forwardTo net.Conn, meanDelay time.Duration, stddevDelay time.Duration) *Connection {
+	return &Connection{
+		accepted:            accepted,
+		forwardTo:           forwardTo,
+		deferredToForwarded: NewDeferredWriter(forwardTo, meanDelay, stddevDelay),
+		deferredToAccepted:  NewDeferredWriter(accepted, meanDelay, stddevDelay),
 	}
+}
 
+func (c *Connection) Forward() error {
+	errorChan := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(connection.deferredToForwarded, accepted)
-		if err == nil {
-			err = fmt.Errorf("connection closed by initiator")
-		}
-		if !connection.closing.Load() {
-			errorChan <- err
-		}
-		connection.closingChan <- struct{}{}
+		_, err := io.Copy(c.deferredToForwarded, c.accepted)
+		errorChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(connection.deferredToAccepted, forwardTo)
-		if err == nil {
-			err = fmt.Errorf("connection closed by target")
-		}
-		if !connection.closing.Load() {
-			errorChan <- err
-		}
-		connection.closingChan <- struct{}{}
+		_, err := io.Copy(c.deferredToAccepted, c.forwardTo)
+		errorChan <- err
 	}()
 
-	return connection
+	err := <-errorChan
+
+	_ = c.accepted.Close()
+	_ = c.forwardTo.Close()
+
+	return err
 }
 
-func (c *Connection) AcceptedSourceAddress() net.Addr {
-	return c.acceptedSourceAddress
-}
-
-func (c *Connection) AcceptedLocalAddress() net.Addr {
-	return c.acceptedLocalAddress
-}
-
-func (c *Connection) ForwardedLocalAddress() net.Addr {
-	return c.forwardedLocalAddress
-}
-
-func (c *Connection) ForwardedToAddress() net.Addr {
-	return c.forwardedToAddress
-}
-
-func (c *Connection) String() string {
-	return fmt.Sprintf(`%s->%s[Connection]%s->%s`,
-		c.AcceptedSourceAddress().String(),
-		c.AcceptedLocalAddress().String(),
-		c.ForwardedLocalAddress().String(),
-		c.ForwardedToAddress().String(),
-	)
-}
-
-func (c *Connection) Close() error {
-	if c.closing.Load() {
-		return nil
-	}
-	c.closing.Store(true)
-	errs := errors.Join(
-		c.deferredToAccepted.Close(),
-		c.deferredToForwarded.Close(),
-		c.accepted.Close(),
-		c.forwardTo.Close(),
-	)
-	<-c.closingChan
-	<-c.closingChan
-
-	return errs
+func (c *Connection) Abort(err error) {
+	c.deferredToAccepted.Abort(err)
+	c.deferredToForwarded.Abort(err)
+	_ = c.accepted.Close()
+	_ = c.forwardTo.Close()
 }

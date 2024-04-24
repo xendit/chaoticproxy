@@ -41,7 +41,9 @@ func main() {
 			case NamedListenerNewConnectionEvent:
 				fmt.Printf("Listener %v accepted connection %v\n", e.Name, e.ConnectionName)
 			case NamedListenerConnectionClosedEvent:
-				fmt.Printf("Listener %v closed connection %v: %v\n", e.Name, e.ConnectionName, e.Error)
+				fmt.Printf("Listener %v closed connection %v\n", e.Name, e.ConnectionName)
+			case NamedListenerConnectionFailedEvent:
+				fmt.Printf("Listener %v failed connection %v: %v\n", e.Name, e.ConnectionName, e.Error)
 			case NamedListenerNewConnectionErrorEvent:
 				fmt.Printf("Listener %v failed to accept connection: %v\n", e.Name, e.Error)
 			case NamedListenerConfigUpdatedEvent:
