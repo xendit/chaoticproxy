@@ -1,0 +1,60 @@
+{
+    "listeners": [
+        {
+            "name": "localstack",
+            "address": "127.0.0.1:4566",
+            "target": "127.0.0.1:4567",
+            "rejectionRate": 0.0,
+            "durability": {
+                "mean": 0.0,
+                "stddev": 0.0
+            },
+            "latency": {
+                "mean": 0.0,
+                "stddev": 0.0
+            }
+        },
+        {
+            "name": "sftp",
+            "address": "127.0.0.1:22",
+            "target": "127.0.0.1:23",
+            "rejectionRate": 0.0,
+            "durability": {
+                "mean": 0.0,
+                "stddev": 0.0
+            },
+            "latency": {
+                "mean": 0.0,
+                "stddev": 0.0
+            }
+        },
+        {
+            "name": "kafka",
+            "address": "127.0.0.1:29092",
+            "target": "127.0.0.1:29093",
+            "rejectionRate": 0.0,
+            "durability": {
+                "mean": 0.0,
+                "stddev": 0.0
+            },
+            "latency": {
+                "mean": 0.0,
+                "stddev": 0.0
+            }
+        },
+        {
+            "name": "pg",
+            "address": "127.0.0.1:54320",
+            "target": "127.0.0.1:54321",
+            "rejectionRate": 0.0,
+            "durability": {
+                "mean": 0.0,
+                "stddev": 0.0
+            },
+            "latency": {
+                "mean": 0.0,
+                "stddev": 0.0
+            }
+        }
+    ]
+}
