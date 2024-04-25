@@ -93,4 +93,4 @@ export CHAOTICPROXY_CONFIG='{"listeners":[{"name":"http","address":"localhost:80
 
 # License
 
-This project is licensed under the BID License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3 License. See the [LICENSE](LICENSE) file for details.
