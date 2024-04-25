@@ -90,3 +90,7 @@ Two alternatives to provide the configuration are:
 export CHAOTICPROXY_CONFIG='{"listeners":[{"name":"http","address":"localhost:8080","target":"localhost:80"}]}'
 ./chaoticproxy -config-env CHAOTICPROXY_CONFIG
 ```
+
+# License
+
+This project is licensed under the BID License. See the [LICENSE](LICENSE) file for details.
