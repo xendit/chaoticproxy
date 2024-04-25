@@ -1,0 +1,26 @@
+linters-settings:
+  dupl:
+    threshold: 100
+  misspell:
+    locale: US
+  revive:
+    confidence: 0.8
+  lll:
+    line-length: 160
+    tab-width: 1
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - revive
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unused

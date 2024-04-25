@@ -12,12 +12,15 @@ type namedChaoticListener struct {
 	listener              *ChaoticListener
 	events                chan ListenerEvent
 	cancelEventForwarding context.CancelFunc
-	closeChan             chan struct{}
 }
 
 type ProxyEvent interface {
 }
 
+// A chaotic proxy manages a collection of chaotic listeners, each of which listens on a specific address and forwards
+// connections to a target address. The proxy can be configured with a new set of listeners, and will start, stop, or
+// update existing listeners as needed. The proxy will emit events when listeners are started, stopped, or encounter
+// errors.
 type ChaoticProxy struct {
 	listeners map[string]namedChaoticListener
 	events    chan ProxyEvent
@@ -29,10 +32,15 @@ type NamedListenerStartedEvent struct {
 	Listener *ChaoticListener
 }
 
-type NamedListenerStoppedEvent struct {
+type NamedListenerFailedEvent struct {
 	Name     string
 	Listener *ChaoticListener
 	Error    error
+}
+
+type NamedListenerStoppedEvent struct {
+	Name     string
+	Listener *ChaoticListener
 }
 
 type NamedListenerNewConnectionEvent struct {
@@ -68,6 +76,8 @@ type NamedListenerConfigUpdatedEvent struct {
 	Listener *ChaoticListener
 }
 
+// Create a new chaotic proxy that emits events on the given channel. The initial state of the proxy is empty, and
+// listeners must be added by calling ApplyConfig. This function returns immediately.
 func NewChaoticProxy(eventChannel chan ProxyEvent) *ChaoticProxy {
 	proxy := &ChaoticProxy{
 		listeners: make(map[string]namedChaoticListener),
@@ -77,83 +87,101 @@ func NewChaoticProxy(eventChannel chan ProxyEvent) *ChaoticProxy {
 	return proxy
 }
 
+// Apply a new configuration to the proxy. The proxy will start, stop, or update listeners as needed to match the new
+// configuration. The function returns immediately.
 func (p *ChaoticProxy) ApplyConfig(config Config) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	// Keep track of all our existing listeners so we can remove any that are no longer needed.
 	toRemove := make(map[string]struct{})
 	for name := range p.listeners {
 		toRemove[name] = struct{}{}
 	}
 
+	// Go through the new configuration and start, stop, or update listeners as needed.
 	for _, listenerConfig := range config.Listeners {
+		// We don't need to remove this listener, since it's still in the configuration.
 		delete(toRemove, listenerConfig.Name)
+
 		existing, exists := p.listeners[listenerConfig.Name]
 		if exists {
+			// Update the listener if the configuration has changed.
 			existingConfig := existing.listener.GetConfig()
 			if existingConfig != listenerConfig {
 				existing.listener.SetConfig(listenerConfig)
 				p.events <- NamedListenerConfigUpdatedEvent{Name: listenerConfig.Name, Listener: existing.listener}
 			}
 		} else {
+			// Start a new listener. First create the net.Listener.
 			netListener, netListenerErr := net.Listen("tcp", listenerConfig.ListenAddress)
 			if netListenerErr != nil {
 				return fmt.Errorf("failed to listen on %v: %w", listenerConfig.ListenAddress, netListenerErr)
 			}
+			// Next, resolve the target address.
 			targetAddr, addrErr := net.ResolveTCPAddr("tcp", listenerConfig.ForwardTo)
 			if addrErr != nil {
 				return fmt.Errorf("failed to resolve target address %v: %w", listenerConfig.ForwardTo, addrErr)
 			}
 
+			// All is good, start the listener.
 			events := make(chan ListenerEvent, 100)
 			listener := NewChaoticListener(listenerConfig, netListener, targetAddr, events)
 			ctx, cancel := context.WithCancel(context.Background())
-			closeChan := make(chan struct{})
+
+			// Process events asynchronously. We'll forward them to the proxy's event channel.
 			go func() {
 				for {
 					select {
 					case event := <-events:
 						switch e := event.(type) {
 						case NewConnectionEvent:
-							p.events <- NamedListenerNewConnectionEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
+							p.events <- NamedListenerNewConnectionEvent{
+								Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
 						case ConnectionClosedEvent:
-							p.events <- NamedListenerConnectionClosedEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
+							p.events <- NamedListenerConnectionClosedEvent{
+								Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection}
 						case ConnectionFailedEvent:
-							p.events <- NamedListenerConnectionFailedEvent{Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection, Error: e.Error}
+							p.events <- NamedListenerConnectionFailedEvent{
+								Name: listenerConfig.Name, Listener: listener, ConnectionName: e.Name, Connection: e.Connection, Error: e.Error}
 						case NewConnectionErrorEvent:
-							p.events <- NamedListenerNewConnectionErrorEvent{Name: listenerConfig.Name, Listener: listener, Error: e.Error}
-						case ListenerStoppedEvent:
-							p.events <- NamedListenerStoppedEvent{Name: listenerConfig.Name, Listener: listener, Error: e.Error}
+							p.events <- NamedListenerNewConnectionErrorEvent{
+								Name: listenerConfig.Name, Listener: listener, Error: e.Error}
+						case ListenerFailedEvent:
+							p.events <- NamedListenerFailedEvent{
+								Name: listenerConfig.Name, Listener: listener, Error: e.Error}
 						}
 					case <-ctx.Done():
-						closeChan <- struct{}{}
 						return
 					}
 				}
 			}()
 
+			// Add the listener to the proxy, and report that it has started.
 			p.listeners[listenerConfig.Name] = namedChaoticListener{
 				name:                  listenerConfig.Name,
 				listener:              listener,
 				events:                events,
 				cancelEventForwarding: cancel,
-				closeChan:             closeChan,
 			}
 			p.events <- NamedListenerStartedEvent{Name: listenerConfig.Name, Listener: listener}
 		}
 	}
 
+	// So by now, whatever is left in toRemove is no longer in the configuration. We should remove them.
 	for name := range toRemove {
 		_ = p.listeners[name].listener.Close()
 		p.listeners[name].cancelEventForwarding()
-		<-p.listeners[name].closeChan
 		delete(p.listeners, name)
-		p.events <- NamedListenerStoppedEvent{Name: name, Listener: p.listeners[name].listener, Error: fmt.Errorf("listener removed")}
+		p.events <- NamedListenerStoppedEvent{Name: name, Listener: p.listeners[name].listener}
 	}
 
 	return nil
 }
 
+// Get a map of all the listeners currently managed by the proxy. The map is indexed by listener name.
+// The map is a copy of the proxy's internal state, so any further configuration changes will not be reflected in the
+// map.
 func (p *ChaoticProxy) Listeners() map[string]*ChaoticListener {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -166,6 +194,7 @@ func (p *ChaoticProxy) Listeners() map[string]*ChaoticListener {
 	return listeners
 }
 
+// Close the proxy and all its listeners. This will stop all listeners and emit events for each listener that is stopped.
 func (p *ChaoticProxy) Close() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -173,7 +202,6 @@ func (p *ChaoticProxy) Close() {
 	for _, namedListener := range p.listeners {
 		_ = namedListener.listener.Close()
 		namedListener.cancelEventForwarding()
-		<-namedListener.closeChan
-		p.events <- NamedListenerStoppedEvent{Name: namedListener.name, Listener: namedListener.listener, Error: fmt.Errorf("proxy closed")}
+		p.events <- NamedListenerStoppedEvent{Name: namedListener.name, Listener: namedListener.listener}
 	}
 }

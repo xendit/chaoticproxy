@@ -10,8 +10,8 @@
                 "stddev": 0.0
             },
             "latency": {
-                "mean": 0.50,
-                "stddev": 0.50
+                "mean": 0.10,
+                "stddev": 0.10
             }
         },
         {
@@ -24,8 +24,8 @@
                 "stddev": 0.0
             },
             "latency": {
-                "mean": 0.50,
-                "stddev": 0.50
+                "mean": 0.10,
+                "stddev": 0.10
             }
         },
         {
@@ -38,8 +38,8 @@
                 "stddev": 0.0
             },
             "latency": {
-                "mean": 0.50,
-                "stddev": 0.50
+                "mean": 0.10,
+                "stddev": 0.10
             }
         },
         {
@@ -52,8 +52,8 @@
                 "stddev": 0.0
             },
             "latency": {
-                "mean": 0.50,
-                "stddev": 0.50
+                "mean": 0.10,
+                "stddev": 0.10
             }
         },
         {

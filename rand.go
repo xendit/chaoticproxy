@@ -13,6 +13,7 @@ func GenRandomDuration(mean time.Duration, stddev time.Duration) time.Duration {
 	return time.Duration(GenNormalValue(float64(mean), float64(stddev)))
 }
 
-func Likelyhood(percentage float64) bool {
+func Likelihood(percentage float64) bool {
+	// nolint: gosec
 	return rand.Float64() < percentage
 }

@@ -7,6 +7,8 @@ import (
 	"os/signal"
 )
 
+// This is a quick listener to test the proxy. This file is not part of the main proxy codebase.
+
 func main() {
 	listener, listenerErr := net.Listen("tcp", "127.0.0.1:8081")
 	if listenerErr != nil {
