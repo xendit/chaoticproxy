@@ -122,7 +122,11 @@ func genConfig(configFile string) {
 				Name:          "sink",
 				ListenAddress: "localhost:8080",
 				ForwardTo:     "localhost:80",
-				Latency: RandomDuration{
+				RequestLatency: RandomDuration{
+					Mean:   0.1,
+					StdDev: 0.05,
+				},
+				ResponseLatency: RandomDuration{
 					Mean:   0.1,
 					StdDev: 0.05,
 				},

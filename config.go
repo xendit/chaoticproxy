@@ -43,12 +43,13 @@ type RandomDuration struct {
 }
 
 type ListenerConfig struct {
-	Name          string         `json:"name"`
-	ListenAddress string         `json:"address"`
-	ForwardTo     string         `json:"target"`
-	RejectionRate float64        `json:"rejectionRate"`
-	Durability    RandomDuration `json:"durability"`
-	Latency       RandomDuration `json:"latency"`
+	Name            string         `json:"name"`
+	ListenAddress   string         `json:"address"`
+	ForwardTo       string         `json:"target"`
+	RejectionRate   float64        `json:"rejectionRate"`
+	Durability      RandomDuration `json:"durability"`
+	RequestLatency  RandomDuration `json:"requestLatency"`
+	ResponseLatency RandomDuration `json:"responseLatency"`
 }
 
 type Config struct {

@@ -46,12 +46,19 @@ type Connection struct {
 
 // Create a new connection between two network connections. This function returns immediately and the processing of the
 // connection is NOT started. A call to the Forward method is required to start the forwarding.
-func NewConnection(accepted net.Conn, forwardTo net.Conn, meanDelay time.Duration, stddevDelay time.Duration) *Connection {
+func NewConnection(
+	accepted net.Conn,
+	forwardTo net.Conn,
+	requestMeanDelay time.Duration,
+	requestSTDDevDelay time.Duration,
+	responseMeanDelay time.Duration,
+	responseSTDDevDelay time.Duration,
+) *Connection {
 	return &Connection{
 		accepted:            accepted,
 		forwardTo:           forwardTo,
-		deferredToForwarded: NewDeferredWriter(forwardTo, meanDelay, stddevDelay),
-		deferredToAccepted:  NewDeferredWriter(accepted, meanDelay, stddevDelay),
+		deferredToForwarded: NewDeferredWriter(forwardTo, requestMeanDelay, requestSTDDevDelay),
+		deferredToAccepted:  NewDeferredWriter(accepted, responseMeanDelay, responseSTDDevDelay),
 	}
 }
 

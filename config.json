@@ -9,7 +9,7 @@
                 "mean": 0.0,
                 "stddev": 0.0
             },
-            "latency": {
+            "requestLatency": {
                 "mean": 0.10,
                 "stddev": 0.10
             }
@@ -23,7 +23,7 @@
                 "mean": 0.0,
                 "stddev": 0.0
             },
-            "latency": {
+            "responseLatency": {
                 "mean": 0.10,
                 "stddev": 0.10
             }
@@ -37,7 +37,7 @@
                 "mean": 0.0,
                 "stddev": 0.0
             },
-            "latency": {
+            "requestLatency": {
                 "mean": 0.10,
                 "stddev": 0.10
             }
@@ -51,7 +51,7 @@
                 "mean": 0.0,
                 "stddev": 0.0
             },
-            "latency": {
+            "responseLatency": {
                 "mean": 0.10,
                 "stddev": 0.10
             }
@@ -60,7 +60,11 @@
             "name": "sink",
             "address": "127.0.0.1:8080",
             "target": "127.0.0.1:8081",
-            "latency": {
+            "requestLatency": {
+                "mean": 1.00,
+                "stddev": 1.00
+            },
+            "responseLatency": {
                 "mean": 1.00,
                 "stddev": 1.00
             }

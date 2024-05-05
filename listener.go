@@ -137,7 +137,14 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 				defer targetCon.Close()
 
 				// Create a new connection.
-				connection := NewConnection(accepted, targetCon, duration(cfg.Latency.Mean), duration(cfg.Latency.StdDev))
+				connection := NewConnection(
+					accepted,
+					targetCon,
+					duration(cfg.RequestLatency.Mean),
+					duration(cfg.RequestLatency.StdDev),
+					duration(cfg.ResponseLatency.Mean),
+					duration(cfg.ResponseLatency.StdDev),
+				)
 
 				// Generate a name for the connection and store it.
 				l.lock.Lock()

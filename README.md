@@ -20,7 +20,11 @@ Example configuration:
         "mean": 120.0,
         "stddev": 30.0
       },
-      "latency": {
+      "requestLatency": {
+        "mean": 0.1,
+        "stddev": 0.05
+      },
+      "responseLatency": {
         "mean": 0.1,
         "stddev": 0.05
       }
@@ -36,7 +40,8 @@ This configuration defines one single listener:
 - `target`: The address where the proxy will forward the connections. It is a string in the format `host:port`.
 - `rejectionRate`: The rate of connections that will be rejected by the proxy. It is a float between 0 and 1. A value of 0 means that no connections will be rejected. A value of 1 means that all connections will be rejected.
 - `durability`: How long should the connection be allowed to remain open until "chaos" is applied and the connection is closed. It is defined by a mean and a standard deviation. The values are in seconds. Set both to 0 to disable this feature (i.e. the connection will never be closed by the proxy).
-- `latency`: How long should the proxy delay the packets. It is defined by a mean and a standard deviation. The values are in seconds. Set both to 0 to disable this feature (i.e. the packets will not be delayed). Latency is applied on both directions of the connection.
+- `requestLatency`: How long should the proxy delay the packets on the request direction. It is defined by a mean and a standard deviation. The values are in seconds. Set both to 0 to disable this feature (i.e. the packets will not be delayed).
+- `responseLatency`: How long should the proxy delay the packets on the response direction. It is defined by a mean and a standard deviation. The values are in seconds. Set both 0 to to disable this feature (i.e. the packets will not be delayed).
 
 # Updating the configuration
 
