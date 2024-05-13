@@ -146,9 +146,24 @@ func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	return len(cp), nil
 }
 
-// Stop the DeferredWriter. This will stop any further writes and return the given error on the next write.
-// If the writer is already stopped, this method will do nothing.
+// Flush all pending writes. This method will block until all pending writes have been written.
+func (dw *DeferredWriter) Flush() {
+	for len(dw.pipeline) > 0 {
+		dw.mutex.Lock()
+		writeErr := dw.writeError
+		dw.mutex.Unlock()
+		if writeErr != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Flush then stop the DeferredWriter. This will stop any further writes and return the given error on
+// the next write. If the writer is already stopped, this method will do nothing.
 func (dw *DeferredWriter) Stop(err error) {
+	dw.Flush()
+
 	dw.mutex.Lock()
 	defer dw.mutex.Unlock()
 
