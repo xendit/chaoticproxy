@@ -88,7 +88,7 @@ func duration(f float64) time.Duration {
 // The chaotic behavior of the listener is defined by the given configuration.
 // The events channel is used to send events about the listener and its connections.
 // Once started, the configuration can be updated using the SetConfig method. This will only affect new connections.
-func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo net.Addr, events chan ListenerEvent) *ChaoticListener {
+func NewChaoticListener(config ListenerConfig, listener net.Listener, events chan ListenerEvent) *ChaoticListener {
 	l := &ChaoticListener{
 		config:      config,
 		listener:    listener,
@@ -129,7 +129,13 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, forwardTo 
 				}
 
 				// Connect to the target.
-				targetCon, targetError := net.Dial(forwardTo.Network(), forwardTo.String())
+				targetAddr, addrErr := net.ResolveTCPAddr("tcp", l.config.ForwardTo)
+				if addrErr != nil {
+					events <- NewConnectionErrorEvent{Error: fmt.Errorf("failed to resolve target address %v: %w", targetAddr, addrErr)}
+					return
+				}
+
+				targetCon, targetError := net.Dial(targetAddr.Network(), targetAddr.String())
 				if targetError != nil {
 					events <- NewConnectionErrorEvent{Error: targetError}
 					return

@@ -147,15 +147,10 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 			if netListenerErr != nil {
 				return fmt.Errorf("failed to listen on %v: %w", listenerConfig.ListenAddress, netListenerErr)
 			}
-			// Next, resolve the target address.
-			targetAddr, addrErr := net.ResolveTCPAddr("tcp", listenerConfig.ForwardTo)
-			if addrErr != nil {
-				return fmt.Errorf("failed to resolve target address %v: %w", listenerConfig.ForwardTo, addrErr)
-			}
 
 			// All is good, start the listener.
 			events := make(chan ListenerEvent, 100)
-			listener := NewChaoticListener(listenerConfig, netListener, targetAddr, events)
+			listener := NewChaoticListener(listenerConfig, netListener, events)
 			ctx, cancel := context.WithCancel(context.Background())
 
 			// Process events asynchronously. We'll forward them to the proxy's event channel.
