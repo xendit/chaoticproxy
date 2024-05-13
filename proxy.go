@@ -138,10 +138,26 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 			// Update the listener if the configuration has changed.
 			existingConfig := existing.listener.GetConfig()
 			if existingConfig != listenerConfig {
-				existing.listener.SetConfig(listenerConfig)
-				p.events <- NamedListenerConfigUpdatedEvent{Name: listenerConfig.Name, Listener: existing.listener}
+				if existingConfig.ListenAddress != listenerConfig.ListenAddress {
+					// We need to recreate the listener if the address has changed.
+					name := existing.name
+
+					// Stop the existing listener.
+					_ = existing.listener.Close()
+					p.listeners[name].cancelEventForwarding()
+					delete(p.listeners, name)
+					p.events <- NamedListenerStoppedEvent{Name: name, Listener: p.listeners[name].listener}
+
+					// Pretend the listener doesn't exist so we can start a new one.
+					exists = false
+				} else {
+					existing.listener.SetConfig(listenerConfig)
+					p.events <- NamedListenerConfigUpdatedEvent{Name: listenerConfig.Name, Listener: existing.listener}
+				}
 			}
-		} else {
+		}
+
+		if !exists {
 			// Start a new listener. First create the net.Listener.
 			netListener, netListenerErr := net.Listen("tcp", listenerConfig.ListenAddress)
 			if netListenerErr != nil {
