@@ -1,0 +1,14 @@
+[[listeners]]
+name = "localname"
+address = "127.0.0.1:8888"
+target = "127.0.0.1:4444"
+# rejectionRate = 0.5
+rejectionRate = 0.0
+
+[listeners.durability]
+mean = 0.0
+stddev = 0.0
+
+[listeners.requestLatency]
+mean = 0.0
+stddev = 0.0
