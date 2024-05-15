@@ -43,9 +43,9 @@ func run(configFile string, configEnv string, configStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	configChannel := make(chan Config, 10)
-	errorChannel := make(chan error, 10)
-	eventChannel := make(chan ProxyEvent, 10)
+	configChannel := make(chan Config, 100)
+	errorChannel := make(chan error, 100)
+	eventChannel := make(chan ProxyEvent, 100)
 	osSignalChannel := make(chan os.Signal, 1)
 	signal.Notify(osSignalChannel)
 
@@ -76,10 +76,13 @@ func run(configFile string, configEnv string, configStr string) {
 	for {
 		select {
 		case <-osSignalChannel:
+			signal.Stop(osSignalChannel)
 			cancel()
 		case <-ctx.Done():
-			proxy.Close()
-			return
+			if len(eventChannel) == 0 && len(errorChannel) == 0 && len(configChannel) == 0 {
+				proxy.Close()
+				return
+			}
 		case config := <-configChannel:
 			configError := proxy.ApplyConfig(config)
 			if configError != nil {

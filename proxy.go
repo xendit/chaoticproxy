@@ -41,6 +41,7 @@ type namedChaoticListener struct {
 	listener              *ChaoticListener
 	events                chan ListenerEvent
 	cancelEventForwarding context.CancelFunc
+	stopChan              chan struct{}
 }
 
 type ProxyEvent interface {
@@ -145,6 +146,7 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 					// Stop the existing listener.
 					_ = existing.listener.Close()
 					p.listeners[name].cancelEventForwarding()
+					<-p.listeners[name].stopChan
 					delete(p.listeners, name)
 					p.events <- NamedListenerStoppedEvent{Name: name, Listener: p.listeners[name].listener}
 
@@ -169,8 +171,11 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 			listener := NewChaoticListener(listenerConfig, netListener, events)
 			ctx, cancel := context.WithCancel(context.Background())
 
+			stopChan := make(chan struct{})
+
 			// Process events asynchronously. We'll forward them to the proxy's event channel.
 			go func() {
+				defer close(stopChan)
 				for {
 					select {
 					case event := <-events:
@@ -192,7 +197,9 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 								Name: listenerConfig.Name, Listener: listener, Error: e.Error}
 						}
 					case <-ctx.Done():
-						return
+						if len(events) == 0 {
+							return
+						}
 					}
 				}
 			}()
@@ -203,6 +210,7 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 				listener:              listener,
 				events:                events,
 				cancelEventForwarding: cancel,
+				stopChan:              stopChan,
 			}
 			p.events <- NamedListenerStartedEvent{Name: listenerConfig.Name, Listener: listener}
 		}
@@ -212,6 +220,7 @@ func (p *ChaoticProxy) ApplyConfig(config Config) error {
 	for name := range toRemove {
 		_ = p.listeners[name].listener.Close()
 		p.listeners[name].cancelEventForwarding()
+		<-p.listeners[name].stopChan
 		delete(p.listeners, name)
 		p.events <- NamedListenerStoppedEvent{Name: name, Listener: p.listeners[name].listener}
 	}
@@ -242,6 +251,8 @@ func (p *ChaoticProxy) Close() {
 	for _, namedListener := range p.listeners {
 		_ = namedListener.listener.Close()
 		namedListener.cancelEventForwarding()
+		<-namedListener.stopChan
 		p.events <- NamedListenerStoppedEvent{Name: namedListener.name, Listener: namedListener.listener}
 	}
+	p.listeners = make(map[string]namedChaoticListener)
 }

@@ -65,9 +65,6 @@ func NewConnection(
 // Start forwarding data between the two connections. This function will block until an error occurs or either connection
 // is closed. If an error occurs, the error will be returned.
 func (c *Connection) Forward() error {
-	// Ensure that the connections are closed when we're done.
-	defer c.Abort(io.EOF)
-
 	// Start forwarding data in both directions.
 	errorChan := make(chan error, 2)
 	// From accepted to forwarded (i.e. request flow).
@@ -82,12 +79,21 @@ func (c *Connection) Forward() error {
 	}()
 
 	// We're only interested in the first error. Anything else is probably a consequence of the first error.
-	return <-errorChan
+	firstError := <-errorChan
+
+	// Abort both connections. Abort will ensure we first flush any remaining data and then close the connections.
+	if firstError != nil {
+		c.Abort(firstError)
+	} else {
+		c.Abort(io.EOF)
+	}
+	<-errorChan // Wait for the other goroutine to finish.
+	return firstError
 }
 
-// Abort the connection. This will stop the forwarding and close the connections. If a call to Forward is currently
-// blocking, it will be unblocked and will return. It is designed to be called from a different goroutine than the one
-// calling Forward.
+// Abort the connection. This will flush all data, stop the forwarding and close the connections. If a call to
+// Forward is currently blocking, it will be unblocked and will return. It is designed to be called from a
+// different goroutine than the one calling Forward.
 // Calling Abort multiple times is safe and has no additional effect.
 func (c *Connection) Abort(err error) {
 	// Make sure we stop the deferred writers.

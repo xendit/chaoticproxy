@@ -37,6 +37,11 @@ import (
 	"time"
 )
 
+type connection struct {
+	conn     *Connection
+	stopChan chan struct{}
+}
+
 // A ChaoticListener is a listener that accepts incoming connections and forwards them to a target address, but
 // with some chaos. The chaos includes:
 // - Rejection of connections with a given rate.
@@ -45,10 +50,11 @@ import (
 type ChaoticListener struct {
 	config      ListenerConfig
 	listener    net.Listener
-	connections map[string]*Connection
+	connections map[string]*connection
 	events      chan ListenerEvent
 	stopping    bool
 	lock        sync.Mutex
+	stopChan    chan struct{}
 }
 
 type ListenerEvent interface {
@@ -92,11 +98,14 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, events cha
 	l := &ChaoticListener{
 		config:      config,
 		listener:    listener,
-		connections: make(map[string]*Connection),
+		connections: make(map[string]*connection),
 		events:      events,
+		stopping:    false,
+		stopChan:    make(chan struct{}),
 	}
 
 	go func() {
+		defer close(l.stopChan)
 		// We'll use a simple counter to generate connection Names.
 		connectionName := 0
 
@@ -143,7 +152,7 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, events cha
 				defer targetCon.Close()
 
 				// Create a new connection.
-				connection := NewConnection(
+				conn := NewConnection(
 					accepted,
 					targetCon,
 					duration(cfg.RequestLatency.Mean),
@@ -152,15 +161,21 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, events cha
 					duration(cfg.ResponseLatency.StdDev),
 				)
 
+				// Create the stop channel
+				stopChan := make(chan struct{})
+
 				// Generate a name for the connection and store it.
 				l.lock.Lock()
 				nameAsString := strconv.Itoa(connectionName)
 				connectionName++
-				l.connections[nameAsString] = connection
+				l.connections[nameAsString] = &connection{
+					conn:     conn,
+					stopChan: stopChan,
+				}
 				l.lock.Unlock()
 
 				// Issue a new connection event.
-				events <- NewConnectionEvent{Name: nameAsString, Connection: connection}
+				events <- NewConnectionEvent{Name: nameAsString, Connection: conn}
 
 				if cfg.Durability.Mean != 0 && cfg.Durability.StdDev != 0 {
 					// If we have a durability configuration, we'll close the connection after a delay.
@@ -178,17 +193,18 @@ func NewChaoticListener(config ListenerConfig, listener net.Listener, events cha
 				}
 
 				// Start forwarding the connection. This is a blocking call.
-				connectionError := connection.Forward()
+				connectionError := conn.Forward()
 
 				// The connection has been closed. Let's issue an event.
 				l.lock.Lock()
 				delete(l.connections, nameAsString)
-				if connectionError != nil {
-					events <- ConnectionFailedEvent{Name: nameAsString, Connection: connection, Error: connectionError}
-				} else {
-					events <- ConnectionClosedEvent{Name: nameAsString, Connection: connection}
-				}
 				l.lock.Unlock()
+				if connectionError != nil {
+					events <- ConnectionFailedEvent{Name: nameAsString, Connection: conn, Error: connectionError}
+				} else {
+					events <- ConnectionClosedEvent{Name: nameAsString, Connection: conn}
+				}
+				close(stopChan)
 			}()
 
 		}
@@ -220,7 +236,7 @@ func (l *ChaoticListener) GetConnections() map[string]*Connection {
 
 	var ans = make(map[string]*Connection)
 	for k, v := range l.connections {
-		ans[k] = v
+		ans[k] = v.conn
 	}
 	return ans
 }
@@ -234,10 +250,15 @@ func (l *ChaoticListener) Addr() net.Addr {
 func (l *ChaoticListener) Close() error {
 	l.lock.Lock()
 	l.stopping = true
-	for _, connection := range l.connections {
-		connection.Abort(fmt.Errorf("listener closed"))
-	}
-	l.connections = make(map[string]*Connection)
+	closeErr := l.listener.Close()
 	l.lock.Unlock()
-	return l.listener.Close()
+	<-l.stopChan
+
+	// The listener has been closed and the loop exited. Let's close all remaining connections.
+	for _, connection := range l.connections {
+		connection.conn.Abort(fmt.Errorf("listener closed"))
+		<-connection.stopChan
+	}
+	l.connections = make(map[string]*connection)
+	return closeErr
 }

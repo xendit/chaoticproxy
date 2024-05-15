@@ -56,9 +56,9 @@ type DeferredWriter struct {
 	stddevDelay time.Duration
 	pipeline    chan scheduledItem
 	writeError  error
-	ctx         context.Context
 	cancel      context.CancelFunc
 	mutex       sync.Mutex
+	stopChan    chan struct{}
 }
 
 // Create a start a new deferred writer. Any write to this writer will eventually be written to the underlying writer
@@ -76,21 +76,22 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 		writer:      writer,
 		meanDelay:   meanDelay,
 		stddevDelay: stddevDelay,
-		ctx:         ctx,
 		cancel:      cancel,
 		pipeline:    make(chan scheduledItem, 100),
+		stopChan:    make(chan struct{}),
 	}
 
 	// This is the main writer loop.
 	go func() {
+		defer close(dw.stopChan)
 		for {
 			select {
 			case nextItem := <-dw.pipeline:
 				// We have some data to write.
 				{
 					select {
-					case <-dw.ctx.Done():
-						// Tive to leave.
+					case <-ctx.Done():
+						// Time to leave.
 						return
 					// We want to wait until the time has come to write the data.
 					case <-time.After(time.Until(nextItem.time)):
@@ -102,14 +103,14 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 							// We also decide to stop the writer, as we assume errors
 							// are not recoverable.
 							dw.mutex.Lock()
-							defer dw.mutex.Unlock()
 							dw.writeError = writeErr
+							dw.mutex.Unlock()
 							dw.cancel()
 							return
 						}
 					}
 				}
-			case <-dw.ctx.Done():
+			case <-ctx.Done():
 				// Time to leave.
 				return
 			}
@@ -123,12 +124,12 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 // different goroutine. If a previous deferred write has failed, this method will return the error of that
 // previous write. Otherwise, it will "pretend" the write is successful and return the length of the data.
 func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
-	dw.mutex.Lock()
-	defer dw.mutex.Unlock()
-
 	// If we have an error, we return it.
-	if dw.writeError != nil {
-		return 0, dw.writeError
+	dw.mutex.Lock()
+	writeError := dw.writeError
+	dw.mutex.Unlock()
+	if writeError != nil {
+		return 0, writeError
 	}
 
 	// We must copy the data, as the caller may modify it after this call, or
@@ -146,9 +147,12 @@ func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	return len(cp), nil
 }
 
-// Flush all pending writes. This method will block until all pending writes have been written.
+// Flush all pending writes. This method will block until all pending writes have been written,
+// or if a write error has occured, whichever comes first.
 func (dw *DeferredWriter) Flush() {
 	for len(dw.pipeline) > 0 {
+		// Check the write error. It will be set if a write has failed or if
+		// the writer has been stopped.
 		dw.mutex.Lock()
 		writeErr := dw.writeError
 		dw.mutex.Unlock()
@@ -165,10 +169,14 @@ func (dw *DeferredWriter) Stop(err error) {
 	dw.Flush()
 
 	dw.mutex.Lock()
-	defer dw.mutex.Unlock()
-
-	if dw.writeError != nil {
+	if dw.writeError == nil {
 		dw.writeError = err
 	}
+	dw.mutex.Unlock()
+
+	// Request the writer to stop.
 	dw.cancel()
+
+	// Wait for the chan to be closed. That is the indication that the writer has stopped.
+	<-dw.stopChan
 }
