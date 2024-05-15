@@ -40,8 +40,8 @@ import (
 )
 
 func run(configFile string, configEnv string, configStr string) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	rootContext, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
 
 	configChannel := make(chan Config, 100)
 	errorChannel := make(chan error, 100)
@@ -50,7 +50,7 @@ func run(configFile string, configEnv string, configStr string) {
 	signal.Notify(osSignalChannel)
 
 	if configFile != "" {
-		go WatchConfigFile(ctx, configFile, configChannel, errorChannel)
+		go WatchConfigFile(rootContext, configFile, configChannel, errorChannel)
 	}
 	if configEnv != "" {
 		configStr = os.Getenv(configEnv)
@@ -73,16 +73,25 @@ func run(configFile string, configEnv string, configStr string) {
 
 	proxy := NewChaoticProxy(eventChannel)
 
+	proxyContext, proxyCancel := context.WithCancel(rootContext)
+	defer proxyCancel()
+
 	for {
 		select {
 		case <-osSignalChannel:
 			signal.Stop(osSignalChannel)
-			cancel()
-		case <-ctx.Done():
+			proxyCancel()
+		case <-proxyContext.Done():
 			if len(eventChannel) == 0 && len(errorChannel) == 0 && len(configChannel) == 0 {
-				proxy.Close()
-				return
+				go func() {
+					// Do proxy closure in a separate goroutine so that we can continue
+					// to process events and errors until the end.
+					proxy.Close()
+					rootCancel()
+				}()
 			}
+		case <-rootContext.Done():
+			return
 		case config := <-configChannel:
 			configError := proxy.ApplyConfig(config)
 			if configError != nil {

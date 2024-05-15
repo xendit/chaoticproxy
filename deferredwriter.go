@@ -51,14 +51,15 @@ type scheduledItem struct {
 // It is important to call the Stop method when the writer is no longer needed. Otherwise the writer will continue to
 // wait for the next write indefinitely. Closing the underlying writer will NOT stop the DeferredWriter.
 type DeferredWriter struct {
-	writer      io.Writer
-	meanDelay   time.Duration
-	stddevDelay time.Duration
-	pipeline    chan scheduledItem
-	writeError  error
-	cancel      context.CancelFunc
-	mutex       sync.Mutex
-	stopChan    chan struct{}
+	writer                       io.Writer
+	meanDelay                    time.Duration
+	stddevDelay                  time.Duration
+	pipeline                     chan scheduledItem
+	writeErrorFromWriterLoop     error
+	writeErrorToReturnDuringStop error
+	cancel                       context.CancelFunc
+	mutex                        sync.Mutex
+	stopChan                     chan struct{}
 }
 
 // Create a start a new deferred writer. Any write to this writer will eventually be written to the underlying writer
@@ -89,25 +90,23 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 			case nextItem := <-dw.pipeline:
 				// We have some data to write.
 				{
-					select {
-					case <-ctx.Done():
-						// Time to leave.
+					// Wait for the scheduled time.
+					// We do NOT want to allow this sleep to be interrupted
+					// by the context. We want to write the data even if the
+					// context is done.
+					time.Sleep(time.Until(nextItem.time))
+					// Perform the actual write.
+					_, writeErr := dw.writer.Write(nextItem.data)
+					if writeErr != nil {
+						// The write failed. We remember this error to return it
+						// on the next write.
+						// We also decide to stop the writer, as we assume errors
+						// are not recoverable.
+						dw.mutex.Lock()
+						dw.writeErrorFromWriterLoop = writeErr
+						dw.mutex.Unlock()
+						dw.cancel()
 						return
-					// We want to wait until the time has come to write the data.
-					case <-time.After(time.Until(nextItem.time)):
-						// Perform the actual write.
-						_, writeErr := dw.writer.Write(nextItem.data)
-						if writeErr != nil {
-							// The write failed. We remember this error to return it
-							// on the next write.
-							// We also decide to stop the writer, as we assume errors
-							// are not recoverable.
-							dw.mutex.Lock()
-							dw.writeError = writeErr
-							dw.mutex.Unlock()
-							dw.cancel()
-							return
-						}
 					}
 				}
 			case <-ctx.Done():
@@ -126,7 +125,12 @@ func NewDeferredWriter(writer io.Writer, meanDelay time.Duration, stddevDelay ti
 func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	// If we have an error, we return it.
 	dw.mutex.Lock()
-	writeError := dw.writeError
+	// First check if we are currently stopping. If so, we return the error to the caller.
+	writeError := dw.writeErrorToReturnDuringStop
+	// If we are not stopping, we also check if there is an error coming from the writer loop.
+	if writeError == nil {
+		writeError = dw.writeErrorFromWriterLoop
+	}
 	dw.mutex.Unlock()
 	if writeError != nil {
 		return 0, writeError
@@ -147,36 +151,36 @@ func (dw *DeferredWriter) Write(p []byte) (n int, err error) {
 	return len(cp), nil
 }
 
-// Flush all pending writes. This method will block until all pending writes have been written,
-// or if a write error has occured, whichever comes first.
-func (dw *DeferredWriter) Flush() {
-	for len(dw.pipeline) > 0 {
-		// Check the write error. It will be set if a write has failed or if
-		// the writer has been stopped.
-		dw.mutex.Lock()
-		writeErr := dw.writeError
-		dw.mutex.Unlock()
-		if writeErr != nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // Flush then stop the DeferredWriter. This will stop any further writes and return the given error on
 // the next write. If the writer is already stopped, this method will do nothing.
 func (dw *DeferredWriter) Stop(err error) {
-	dw.Flush()
-
+	// First we set the error to return on the next write. This prevents any further writes
+	// from being queued while we are stopping.
 	dw.mutex.Lock()
-	if dw.writeError == nil {
-		dw.writeError = err
-	}
+	dw.writeErrorToReturnDuringStop = err
 	dw.mutex.Unlock()
 
-	// Request the writer to stop.
+	// Then, we must wait for the pipeline to be empty. This means there are no pending
+	// writes in the pipe. Note that it does NOT indicate that the last write has been
+	// written to the underlying writer...
+	for len(dw.pipeline) > 0 {
+		// Check the write error. It will be set if the writer has stopped on its own.
+		dw.mutex.Lock()
+		writeErr := dw.writeErrorFromWriterLoop
+		dw.mutex.Unlock()
+		if writeErr != nil {
+			break
+		}
+
+		// Wait a bit before checking again.
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// At this stage, the pipe is empty and it will stay this way. Let's request the writer
+	// to stop (if it hasn't already).
 	dw.cancel()
 
-	// Wait for the chan to be closed. That is the indication that the writer has stopped.
+	// Wait for the chan to be closed. That is the indication that the writer has stopped,
+	// and therefore the last write has been written to the underlying writer.
 	<-dw.stopChan
 }
