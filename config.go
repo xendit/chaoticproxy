@@ -34,26 +34,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
+	"github.com/BurntSushi/toml"
 )
 
 type RandomDuration struct {
-	Mean   float64 `json:"mean"`
-	StdDev float64 `json:"stddev"`
+	Mean   float64 `json:"mean" toml:"mean"`
+	StdDev float64 `json:"stddev" toml:"stddev"`
 }
 
 type ListenerConfig struct {
-	Name            string         `json:"name"`
-	ListenAddress   string         `json:"address"`
-	ForwardTo       string         `json:"target"`
-	RejectionRate   float64        `json:"rejectionRate"`
-	Durability      RandomDuration `json:"durability"`
-	RequestLatency  RandomDuration `json:"requestLatency"`
-	ResponseLatency RandomDuration `json:"responseLatency"`
+	Name            string         `json:"name" toml:"name"`
+	ListenAddress   string         `json:"address" toml:"address"`
+	ForwardTo       string         `json:"target" toml:"target"`
+	RejectionRate   float64        `json:"rejectionRate" toml:"rejectionRate"`
+	Durability      RandomDuration `json:"durability" toml:"durability"`
+	RequestLatency  RandomDuration `json:"requestLatency" toml:"requestLatency"`
+	ResponseLatency RandomDuration `json:"responseLatency" toml:"responseLatency"`
 }
 
 type Config struct {
-	Listeners []ListenerConfig `json:"listeners"`
+	Listeners []ListenerConfig `json:"listeners" toml:"listeners"`
 }
 
 func LoadConfigFromFile(configFile string) (Config, error) {
@@ -61,10 +63,17 @@ func LoadConfigFromFile(configFile string) (Config, error) {
 	if readError != nil {
 		return Config{}, fmt.Errorf("failed to read config file %v: %w", configFile, readError)
 	}
+
 	var config Config
-	unmarshalError := json.Unmarshal(data, &config)
-	if unmarshalError != nil {
-		return Config{}, fmt.Errorf("failed to unmarshal config file %v: %w", configFile, unmarshalError)
+	var parseErr error
+	if strings.HasSuffix(configFile, ".toml") {
+		_, parseErr = toml.Decode(string(data), &config)
+	} else {
+		parseErr = json.Unmarshal(data, &config)
+	}
+
+	if parseErr != nil {
+		return config, fmt.Errorf("failed to unmarshal config file %v: %w", configFile, parseErr)
 	}
 	return config, nil
 }
